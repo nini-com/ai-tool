@@ -1,0 +1,342 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>A Universe of Applications</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;900&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #0D1B2A;
+            color: #E0E1DD;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            padding: 2rem;
+        }
+        .gemini-modal {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.7);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+            opacity: 0;
+            visibility: hidden;
+            transition: opacity 0.3s ease, visibility 0.3s ease;
+        }
+        .gemini-modal.visible {
+            opacity: 1;
+            visibility: visible;
+        }
+        .gemini-modal-content {
+            background-color: #1B263B;
+            padding: 2rem;
+            border-radius: 0.75rem;
+            width: 90%;
+            max-width: 600px;
+            max-height: 90vh;
+            overflow-y: auto;
+            position: relative;
+            transform: scale(0.95);
+            transition: transform 0.3s ease;
+        }
+        .gemini-modal.visible .gemini-modal-content {
+            transform: scale(1);
+        }
+        .loader {
+            border: 4px solid #415A77;
+            border-top: 4px solid #FFD166;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 2rem auto;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        .gemini-button {
+            background-image: linear-gradient(to right, #F76F72 0%, #FFD166  51%, #F76F72  100%);
+            margin-top: 1rem;
+            padding: 12px 25px;
+            text-align: center;
+            text-transform: uppercase;
+            transition: 0.5s;
+            background-size: 200% auto;
+            color: white;            
+            border-radius: 0.5rem;
+            display: block;
+            width: 100%;
+            font-weight: bold;
+            cursor: pointer;
+        }
+        .gemini-button:hover {
+            background-position: right center;
+            color: #fff;
+            text-decoration: none;
+        }
+    </style>
+</head>
+<body>
+
+    <section id="app-layer" class="w-full">
+        <div class="bg-[#1B263B] rounded-xl shadow-2xl p-6 md:p-8">
+            <h2 class="text-3xl font-bold text-white text-center mb-2">A Universe of Applications</h2>
+            <p class="text-gray-300 leading-relaxed max-w-3xl mx-auto text-center mb-8">
+                The application layer is where the AI explosion is most visible. Describe a task, and let AI suggest the right tools for the job.
+            </p>
+            <div class="w-full max-w-4xl mx-auto h-[450px] md:h-[500px] relative mb-8">
+                <canvas id="categoryDistributionChart"></canvas>
+            </div>
+            <div class="max-w-xl mx-auto">
+                <label for="toolTask" class="block text-sm font-medium text-gray-300">Describe a task you want to accomplish:</label>
+                <textarea id="toolTask" rows="3" class="mt-1 block w-full bg-[#0D1B2A] border border-gray-600 rounded-md shadow-sm py-2 px-3 text-white focus:outline-none focus:ring-[#FFD166] focus:border-[#FFD166]" placeholder="e.g., Create a short animated explainer video for my new mobile app."></textarea>
+                <button id="suggestTools" class="gemini-button">✨ Suggest AI Tools</button>
+            </div>
+        </div>
+    </section>
+
+    <div id="geminiModal" class="gemini-modal">
+        <div class="gemini-modal-content">
+            <button id="closeModal" class="absolute top-4 right-4 text-gray-400 hover:text-white text-2xl">&times;</button>
+            <h3 id="modalTitle" class="text-2xl font-bold text-white mb-4"></h3>
+            <div id="modalBody">
+                <div class="loader"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const wrapLabel = (label, maxWidth) => {
+            const words = label.split(' ');
+            let lines = [];
+            let currentLine = '';
+            words.forEach(word => {
+                if ((currentLine + word).length > maxWidth) {
+                    lines.push(currentLine.trim());
+                    currentLine = '';
+                }
+                currentLine += word + ' ';
+            });
+            lines.push(currentLine.trim());
+            return lines;
+        };
+
+        const tooltipTitleCallback = (tooltipItems) => {
+            const item = tooltipItems[0];
+            let label = item.chart.data.labels[item.dataIndex];
+            if (Array.isArray(label)) {
+              return label.join(' ');
+            }
+            return label;
+        };
+
+        const chartColors = {
+            red: 'rgba(247, 111, 114, 0.8)',
+            yellow: 'rgba(255, 209, 102, 0.8)',
+            green: 'rgba(6, 214, 160, 0.8)',
+            blue: 'rgba(17, 138, 178, 0.8)',
+            midBlue: 'rgba(65, 90, 119, 0.8)',
+        };
+        
+        const chartBorderColors = {
+            red: 'rgb(247, 111, 114)',
+            yellow: 'rgb(255, 209, 102)',
+            green: 'rgb(6, 214, 160)',
+            blue: 'rgb(17, 138, 178)',
+            midBlue: 'rgb(65, 90, 119)',
+        };
+
+        const defaultChartOptions = {
+            maintainAspectRatio: false,
+            responsive: true,
+            plugins: {
+                legend: {
+                    labels: {
+                        color: '#E0E1DD',
+                        font: {
+                            family: "'Inter', sans-serif"
+                        }
+                    }
+                },
+                tooltip: {
+                    callbacks: {
+                        title: tooltipTitleCallback
+                    },
+                    bodyFont: {
+                       family: "'Inter', sans-serif"
+                    },
+                    titleFont: {
+                       family: "'Inter', sans-serif"
+                    }
+                }
+            },
+            scales: {
+                y: {
+                    ticks: { color: '#E0E1DD' },
+                    grid: { color: 'rgba(224, 225, 221, 0.2)' }
+                },
+                x: {
+                    ticks: { color: '#E0E1DD' },
+                    grid: { color: 'rgba(224, 225, 221, 0.2)' }
+                }
+            }
+        };
+
+        const categoryDistributionCtx = document.getElementById('categoryDistributionChart').getContext('2d');
+        const rawLabels = [
+            'Image & Design', 
+            'Productivity & Workflow', 
+            'Text & Copywriting', 
+            'Marketing & Sales', 
+            'Video & Animation', 
+            'Developer Tools',
+            'Data Science',
+            'Audio & Music'
+        ];
+        const wrappedLabels = rawLabels.map(label => wrapLabel(label, 16));
+        new Chart(categoryDistributionCtx, {
+            type: 'bar',
+            data: {
+                labels: wrappedLabels,
+                datasets: [{
+                    label: 'Number of Tools (Approx.)',
+                    data: [200, 150, 150, 150, 100, 100, 75, 75],
+                    backgroundColor: [
+                        chartColors.red,
+                        chartColors.blue,
+                        chartColors.green,
+                        chartColors.yellow,
+                        chartColors.midBlue,
+                        'rgba(255, 99, 132, 0.8)',
+                        'rgba(54, 162, 235, 0.8)',
+                        'rgba(255, 206, 86, 0.8)'
+                    ],
+                    borderColor: [
+                        chartBorderColors.red,
+                        chartBorderColors.blue,
+                        chartBorderColors.green,
+                        chartBorderColors.yellow,
+                        chartBorderColors.midBlue,
+                        'rgb(255, 99, 132)',
+                        'rgb(54, 162, 235)',
+                        'rgb(255, 206, 86)'
+                    ],
+                    borderWidth: 1
+                }]
+            },
+            options: {
+                ...defaultChartOptions,
+                indexAxis: 'y',
+                scales: {
+                    y: {
+                        ticks: { color: '#E0E1DD', font: { size: 12, family: "'Inter', sans-serif" } },
+                        grid: { color: 'rgba(224, 225, 221, 0.1)' }
+                    },
+                    x: {
+                        ticks: { color: '#E0E1DD' },
+                        grid: { color: 'rgba(224, 225, 221, 0.2)' }
+                    }
+                },
+                plugins: {
+                    ...defaultChartOptions.plugins,
+                    legend: {
+                        display: false
+                    }
+                }
+            }
+        });
+
+        const geminiModal = document.getElementById('geminiModal');
+        const modalTitle = document.getElementById('modalTitle');
+        const modalBody = document.getElementById('modalBody');
+        const closeModalBtn = document.getElementById('closeModal');
+
+        const showModal = (title) => {
+            modalTitle.textContent = title;
+            modalBody.innerHTML = '<div class="loader"></div>';
+            geminiModal.classList.add('visible');
+        };
+
+        const hideModal = () => {
+            geminiModal.classList.remove('visible');
+        };
+
+        closeModalBtn.addEventListener('click', hideModal);
+        geminiModal.addEventListener('click', (e) => {
+            if (e.target === geminiModal) {
+                hideModal();
+            }
+        });
+
+        async function callGeminiApi(prompt, maxRetries = 3) {
+            const apiKey = ""; 
+            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${apiKey}`;
+            const payload = {
+                contents: [{ role: "user", parts: [{ text: prompt }] }]
+            };
+
+            let attempt = 0;
+            while (attempt < maxRetries) {
+                try {
+                    const response = await fetch(apiUrl, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+
+                    if (!response.ok) {
+                        throw new Error(`HTTP error! status: ${response.status}`);
+                    }
+
+                    const result = await response.json();
+                    
+                    if (result.candidates && result.candidates.length > 0 && result.candidates[0].content.parts.length > 0) {
+                        return result.candidates[0].content.parts[0].text;
+                    } else {
+                        throw new Error("Invalid response structure from Gemini API.");
+                    }
+                } catch (error) {
+                    attempt++;
+                    if (attempt >= maxRetries) {
+                        console.error("Gemini API call failed after multiple retries:", error);
+                        modalBody.innerHTML = `<p class="text-red-400">Sorry, something went wrong while contacting the AI. Please check the console for details and try again later.</p>`;
+                        return null;
+                    }
+                    const delay = Math.pow(2, attempt) * 1000;
+                    await new Promise(res => setTimeout(res, delay));
+                }
+            }
+        }
+
+        document.getElementById('suggestTools').addEventListener('click', async () => {
+            const task = document.getElementById('toolTask').value;
+            if (!task.trim()) {
+                modalTitle.textContent = "Input Error";
+                modalBody.innerHTML = `<p>Please describe a task before requesting suggestions.</p>`;
+                geminiModal.classList.add('visible');
+                return;
+            }
+            showModal('AI Tool Suggestions');
+            const prompt = `You are an AI tool expert. A user needs to accomplish this task: "${task}". Based on this task, suggest the top 3 most relevant AI tool categories from the following list: [Image & Design, Productivity & Workflow, Text & Copywriting, Marketing & Sales, Video & Animation, Developer Tools, Data Science, Audio & Music]. For each suggested category, invent one realistic, hypothetical tool name and a one-sentence description of what it does. Format the output clearly with bold headings for each category and tool name.`;
+            const result = await callGeminiApi(prompt);
+            if (result) {
+                modalBody.innerHTML = result.replace(/\n/g, '<br>').replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+            }
+        });
+    </script>
+
+</body>
+</html>
